@@ -162,7 +162,7 @@ AM_CONDITIONAL([BUILD_OPENCL], [test "x$with_opencl" = "xyes"])
 # CUDA support
 AC_ARG_WITH([cuda],
     [AS_HELP_STRING([--with-cuda],
-        [build CUDA versions of SHOC benchmark programs @<:@default=check@:>@])],
+        [build CUDA versions of SHOC benchmark programs (based on nvcc or clang) @<:@default=check@:>@])],
     [],
     [with_cuda=check])
 
@@ -228,7 +228,10 @@ AS_IF([test "x$with_cuda" != xno],
                  CUDA_CPPFLAGS=["-gencode=arch=compute_12,code=sm_12 \
  -gencode=arch=compute_13,code=sm_13 \
  -gencode=arch=compute_20,code=sm_20 \
- -gencode=arch=compute_20,code=compute_20"]
+ -gencode=arch=compute_30,code=sm_30 \
+ -gencode=arch=compute_35,code=sm_35 \
+ -gencode=arch=compute_37,code=sm_37 \	
+"]
                  AC_MSG_NOTICE([using CUDA_CPPFLAGS=$CUDA_CPPFLAGS])
                  AC_MSG_WARN([*** SHOC programs may fail if these -gencode values do not apply to your GPU.  If they don't apply, or if you want to shorten SHOC's compile time, determine the -gencode options that apply for your GPU and re-configure SHOC explicitly specifying only those options in CUDA_CPPFLAGS during the configure. ***])
                 ]
@@ -236,6 +239,84 @@ AS_IF([test "x$with_cuda" != xno],
              AC_SUBST([CUDA_CPPFLAGS])
             ]
         )
+
+	# check for the clang program
+        AC_PATH_PROG([CUDACLANG],[clang],[])
+
+        AS_IF([test "x$CUDACLANG" != x],
+            [ savedCXX=$CXX
+              CXX=$CUDACLANG
+              NVCC=$CUDACLANG
+              savedLIBS=$LIBS
+              savedCPPFLAGS=$CPPFLAGS
+              savedCXXFLAGS=$CXXFLAGS
+              savedLDFLAGS=$LDFLAGS
+              CXXFLAGS=$NVCXXFLAGS
+              LDFLAGS=""
+
+              # find cuda include path based on location of nvcc command
+              cudabindir=`AS_DIRNAME([$CUDACLANG])`
+              CUDA_INCDIR=`AS_DIRNAME([$cudabindir])`/include
+              CPPFLAGS="$CPPFLAGS -I$CUDA_INCDIR"
+
+	      # TODO: we might not need this
+              AC_CHECK_HEADERS([cuda.h cuda_runtime.h],[],
+                [CUDACLANG=""]
+              )
+              AC_CHECK_LIB([cublas], [cublasInit],[],
+                [CUDACLANG=""]
+              )
+              AC_CHECK_LIB([cufft], [cufftPlan1d], [],
+                [CUDACLANG=""]
+              )
+
+              CPPFLAGS=$savedCPPFLAGS
+              LIBS=$savedLIBS
+              CXX=$savedCXX
+              CXXFLAGS=$savedCXXFLAGS
+              LDFLAGS=$savedLDFLAGS
+	      AC_MSG_NOTICE([clang-based CUDA installation found])
+            ],
+            [ if test "x$with_cuda" != xcheck; then
+                AC_MSG_FAILURE([CUDA support was requested, but no usable clang-based CUDA installation found])
+              fi
+              CUDACLANG=""
+            ]
+        )
+
+dnl         AS_IF([test "x$CUDACLANG" != x],
+dnl             [with_cuda=yes
+dnl              USE_CUDA=yes
+dnl              MPI_SUBDIRS="$MPI_SUBDIRS cuda"
+dnl              AC_SUBST([CUDA_INCDIR])],
+dnl             [AC_MSG_NOTICE([no usable CUDA installation found])
+dnl              with_cuda=no
+dnl             ])
+
+dnl         AS_IF([test "x$with_cuda" = xyes],
+dnl             [AS_IF([test "x$CUDA_CPPFLAGS" = x],
+dnl                 [dnl generate CUDA code for broad spectrum of devices
+dnl                  dnl Note: cc 13 for Tesla
+dnl                  dnl Note: cc 20 for Fermi
+dnl                  dnl Note: cc 30 for Kepler
+dnl                  CUDA_CPPFLAGS=["\
+dnl -gencode=arch=compute_12,code=sm_12 \
+dnl -gencode=arch=compute_13,code=sm_13 \
+dnl -gencode=arch=compute_20,code=sm_20 \
+dnl -gencode=arch=compute_30,code=sm_30 \
+dnl -gencode=arch=compute_35,code=sm_35 \
+dnl -gencode=arch=compute_37,code=sm_37 \	
+dnl "]
+dnl                  AC_MSG_NOTICE([using CUDA_CPPFLAGS=$CUDA_CPPFLAGS])
+dnl                  AC_MSG_WARN([*** SHOC programs may fail if these -gencode values do not apply to your GPU.  If they don't apply, or if you want to shorten SHOC's compile time, determine the -gencode options that apply for your GPU and re-configure SHOC explicitly specifying only those options in CUDA_CPPFLAGS during the configure. ***])
+dnl                 ]
+dnl              )
+dnl              AC_SUBST([CUDA_CPPFLAGS])
+dnl             ]
+dnl         )
+
+
+
     ]
 )
 AM_CONDITIONAL([BUILD_CUDA], [test "x$with_cuda" = "xyes"])
